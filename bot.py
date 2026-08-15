@@ -17,20 +17,11 @@ from telegram.ext import (
     filters,
 )
 
-# ----------------- Environment Variables Configuration -----------------
-BOT_TOKEN = os.environ.get("BOT_TOKEN")
-OWNER_ID_RAW = os.environ.get("OWNER_ID")
+# Configuration (Railway Variables မှ ဖတ်ယူပါမည်၊ မရှိပါက Default ကို သုံးပါမည်)
+BOT_TOKEN = os.getenv("BOT_TOKEN", "8964042047:AAHcpeX9Lw0uEz77FuVWU1Tz3dpav-CB2w0")
+OWNER_ID = int(os.getenv("OWNER_ID", "8305397892"))
 
-if not BOT_TOKEN:
-    raise ValueError("❌ BOT_TOKEN environment variable မတွေ့ရှိပါ။ Railway Variables တွင် ထည့်သွင်းပေးပါ။")
-
-if not OWNER_ID_RAW:
-    raise ValueError("❌ OWNER_ID environment variable မတွေ့ရှိပါ။ Railway Variables တွင် ထည့်သွင်းပေးပါ။")
-
-OWNER_ID = int(OWNER_ID_RAW)
-# -----------------------------------------------------------------------
-
-# Database Setup
+# Database Setup (SQLite - User ID များကို အမြဲသိမ်းထားရန်)
 DB_FILE = "bot_users.db"
 
 def init_db():
@@ -59,18 +50,22 @@ def get_all_users():
     conn.close()
     return [row[0] for row in rows]
 
-user_modes = {}
+# In-memory session mode
+user_modes = {}  # {user_id: "rembg" or "hq"}
 
+# Photo Quality Enhancement Function
 def enhance_image_quality(input_bytes: bytes) -> bytes:
     np_arr = np.frombuffer(input_bytes, np.uint8)
     img = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
     
+    # Denoising & Sharpening
     denoised = cv2.fastNlMeansDenoisingColored(img, None, 6, 6, 7, 21)
     gaussian = cv2.GaussianBlur(denoised, (0, 0), 2.0)
     sharpened = cv2.addWeighted(denoised, 1.5, gaussian, -0.5, 0)
     
     pil_img = Image.fromarray(cv2.cvtColor(sharpened, cv2.COLOR_BGR2RGB))
     
+    # Contrast & Sharpness
     enhancer_contrast = ImageEnhance.Contrast(pil_img)
     pil_img = enhancer_contrast.enhance(1.15)
     
@@ -82,9 +77,10 @@ def enhance_image_quality(input_bytes: bytes) -> bytes:
     output_io.seek(0)
     return output_io.getvalue()
 
+# /start Command
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
-    add_user(user_id)
+    add_user(user_id)  # Save to SQLite
     
     keyboard = [
         [
@@ -100,6 +96,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     await update.message.reply_text(welcome_text, reply_markup=reply_markup)
 
+# Button Handler
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -122,6 +119,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parse_mode="Markdown"
         )
 
+# Photo Handler
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     add_user(user_id)
@@ -166,6 +164,7 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         await status_msg.edit_text(f"❌ Error ဖြစ်ပေါ်သွားပါသည်: {str(e)}")
 
+# Owner Broadcast Command (/post သို့မဟုတ် /broadcast)
 async def broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     
@@ -191,14 +190,14 @@ async def broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
         try:
             await context.bot.send_message(chat_id=uid, text=broadcast_msg)
             count += 1
-            await asyncio.sleep(0.05)
+            await asyncio.sleep(0.05)  # Telegram Rate Limit ကာကွယ်ရန်
         except Exception:
             continue
             
     await status_msg.edit_text(f"✅ Users စုစုပေါင်း ({count}) ယောက်ထံ Post ပို့ပြီးပါပြီ။")
 
 def main():
-    init_db()
+    init_db()  # Initialize SQLite
     app = ApplicationBuilder().token(BOT_TOKEN).build()
 
     app.add_handler(CommandHandler("start", start))
